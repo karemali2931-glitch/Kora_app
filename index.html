@@ -40,7 +40,11 @@ label{font-size:14px;color:#a9c4dc;display:block;margin-top:10px}
 
 <div class="card">
   <h2>📸 الخطوة 1: سكرين شوت الماتش</h2>
-  <input type="file" id="imgInput" accept="image/*" capture="environment">
+  <div style="display:flex;gap:10px">
+<button class="btn btn-blue" style="flex:1" onclick="pickImg(true)">📷 كاميرا</button>
+<button class="btn btn-blue" style="flex:1" onclick="pickImg(false)">🖼️ من الجاليري</button>
+</div>
+<input type="file" id="imgInput" accept="image/*" class="hidden">
   <img id="preview" class="preview hidden">
   <div id="ocrStatus" class="status"></div>
   <label>اسم الفريق الأول</label>
@@ -53,6 +57,8 @@ label{font-size:14px;color:#a9c4dc;display:block;margin-top:10px}
 <div class="card">
   <h2>🔑 الخطوة 2: مفتاح Gemini (مرة واحدة بس)</h2>
   <input id="apiKey" type="password" placeholder="API Key">
+  <label>اسم الموديل (سيبه فاضي عادي)</label>
+  <input id="modelName" placeholder="gemini-3.8-flash">
   <p class="hint">جيب مفتاح مجاني من: <a class="link" href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a> — بيتحفظ على جهازك بس ومحصلش حاجة لما تغير الموبايل. لو كبر التطبيق هنقله سيرفر آمن.</p>
 </div>
 
@@ -70,7 +76,13 @@ label{font-size:14px;color:#a9c4dc;display:block;margin-top:10px}
 <script>
 const $ = id => document.getElementById(id);
 $('apiKey').value = localStorage.getItem('gk') || '';
+$('modelName').value = localStorage.getItem('gm') || '';
 
+function pickImg(camera) {
+  const inp = $('imgInput');
+  if (camera) inp.setAttribute('capture', 'environment'); else inp.removeAttribute('capture');
+  inp.click();
+}
 $('imgInput').addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;
@@ -114,18 +126,18 @@ async function analyze() {
   const t1 = $('team1').value.trim(), t2 = $('team2').value.trim(), key = $('apiKey').value.trim();
   if (!t1 || !t2) return alert('اكتب أسماء الفريقين الأول');
   if (!key) return alert('حط مفتاح Gemini الأول');
-  localStorage.setItem('gk', key);
+  localStorage.setItem('gk', key); localStorage.setItem('gm', $('modelName').value.trim());
   $('analyzeBtn').disabled = true; $('loadBox').classList.remove('hidden'); $('resultCard').classList.add('hidden');
   $('loadTxt').textContent = '🔎 جاري البحث عن آخر مباريات الفريقين...';
   const prompt = 'أنت محلل كرة قدم محترف. ابحث على الإنترنت عن آخر 5 مباريات رسمية لكل فريق، وآخر مواجهات مباشرة بين "' + t1 + '" و"' + t2 + '" (آخر 3 سنوات)، والغيابات أو الإصابات المؤثرة لو متاحة. الماتش لسه هيتلعب.\n\nاكتب التحليل باللغة العربية بالشكل ده بالظبط:\n## 🏟️ الفريق الأول: ' + t1 + '\n- آخر 5 مباريات (نتيجة كل مباراة)\n- تقييم الفورمة الحالية من 10 وهل الفريق في أقوى حالاته الفترة دي ولا لأ ولماذا\n## 🏟️ الفريق الثاني: ' + t2 + '\n- آخر 5 مباريات (نتيجة كل مباراة)\n- تقييم الفورمة الحالية من 10 وهل الفريق في أقوى حالاته الفترة دي ولا لأ ولماذا\n## ⚔️ المواجهات المباشرة\n- آخر 3 مواجهات بينهم بالنتائج\n## 🎯 التوقع\n- احتمال فوز ' + t1 + ': نسبة مئوية\n- احتمال التعادل: نسبة مئوية\n- احتمال فوز ' + t2 + ': نسبة مئوية\n- النتيجة المتوقعة الأكثر ترجيحًا\n## ⚽ الأهداف\n- هل المتوقع أهداف كتيرة (Over 2.5) ولا قليلة (Under 2.5) ونسبة الثقة\n## 📝 الخلاصة\n- 3 أسطر تلخص التوقع النهائي';
   const base = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: .4 } };
   let data = null;
   try {
-    for (const m of ['gemini-2.5-flash', 'gemini-2.0-flash']) {
+    for (const m of [$('modelName').value.trim() || 'gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-flash']) {
       try { data = await callGemini(m, key, { ...base, tools: [{ google_search: {} }] }); break; }
       catch (e) {
         try { data = await callGemini(m, key, base); break; }
-        catch (e2) { if (m === 'gemini-2.0-flash') throw e2; }
+        catch (e2) { if (m === 'gemini-2.5-flash') throw e2; }
       }
     }
     const text = data.candidates[0].content.parts.map(p => p.text || '').join('');
@@ -133,7 +145,7 @@ async function analyze() {
     $('resultCard').classList.remove('hidden');
     $('resultCard').scrollIntoView({ behavior: 'smooth' });
   } catch (err) {
-    alert('حصل خطأ: تأكد من المفتاح أو النت — ' + (err.message || '').slice(0, 200));
+    alert('حصل خطأ. تأكد من المفتاح والنت وحاول تاني. لو المشكلة مستمرة، صوّر الخطأ وابعته.');
   }
   $('analyzeBtn').disabled = false; $('loadBox').classList.add('hidden');
 }
