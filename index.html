@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0d1b2a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href='data:application/manifest+json,{"name":"محلل الماتشات","short_name":"محلل الماتشات","start_url":".","display":"standalone","background_color":"%230d1b2a","theme_color":"%230d1b2a"}'>
+<title>محلل الماتشات ⚽</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',Tahoma,Arial,sans-serif}
+body{background:#0d1b2a;color:#e8f0f8;min-height:100vh;padding-bottom:40px}
+.header{background:linear-gradient(135deg,#1b4332,#2d6a4f);padding:22px 16px;text-align:center;border-bottom:3px solid #40916c}
+.header h1{font-size:22px}
+.header p{font-size:13px;color:#b7d8c6;margin-top:4px}
+.card{background:#16283d;border:1px solid #23405e;border-radius:14px;margin:14px;padding:16px}
+.card h2{font-size:16px;margin-bottom:12px;color:#74c69d}
+.btn{display:block;width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:bold;cursor:pointer;margin-top:10px}
+.btn-green{background:#40916c;color:#fff}
+.btn-blue{background:#1d6fb8;color:#fff}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+input,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #34506e;background:#0f1f33;color:#e8f0f8;font-size:15px;margin-top:6px}
+label{font-size:14px;color:#a9c4dc;display:block;margin-top:10px}
+.status{text-align:center;padding:12px;font-size:14px;color:#ffd166;min-height:20px}
+.hidden{display:none!important}
+.result{background:#10241c;border-radius:12px;padding:14px;line-height:1.9;font-size:15px;white-space:pre-wrap}
+.result h3{color:#74c69d;margin:14px 0 6px;font-size:17px}
+.result b{color:#ffd166}
+.result ul{padding-right:20px}
+.spinner{border:4px solid #23405e;border-top:4px solid #40916c;border-radius:50%;width:36px;height:36px;animation:spin 1s linear infinite;margin:10px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+.preview{max-width:100%;border-radius:10px;margin-top:10px}
+.hint{font-size:12px;color:#7d9bb5;margin-top:8px;line-height:1.7}
+.link{color:#74c69d}
+</style>
+</head>
+<body>
+<div class="header"><h1>⚽ محلل الماتشات</h1><p>صوّر السكرين شوت وخد التحليل والتوقع بالعربي</p></div>
+
+<div class="card">
+  <h2>📸 الخطوة 1: سكرين شوت الماتش</h2>
+  <input type="file" id="imgInput" accept="image/*" capture="environment">
+  <img id="preview" class="preview hidden">
+  <div id="ocrStatus" class="status"></div>
+  <label>اسم الفريق الأول</label>
+  <input id="team1" placeholder="مثال: الأهلي">
+  <label>اسم الفريق الثاني</label>
+  <input id="team2" placeholder="مثال: الزمالك">
+  <p class="hint">راجع الأسماء وعدّلها لو القراءة الأوتوماتيكية مش دقيقة 100%</p>
+</div>
+
+<div class="card">
+  <h2>🔑 الخطوة 2: مفتاح Gemini (مرة واحدة بس)</h2>
+  <input id="apiKey" type="password" placeholder="API Key">
+  <p class="hint">جيب مفتاح مجاني من: <a class="link" href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a> — بيتحفظ على جهازك بس ومحصلش حاجة لما تغير الموبايل. لو كبر التطبيق هنقله سيرفر آمن.</p>
+</div>
+
+<div class="card">
+  <button class="btn btn-green" id="analyzeBtn" onclick="analyze()">🚀 حلّل الماتش</button>
+  <div id="loadBox" class="hidden"><div class="spinner"></div><div class="status" id="loadTxt">جاري جمع البيانات وتحليل الماتش...</div></div>
+</div>
+
+<div class="card hidden" id="resultCard">
+  <h2>📊 نتيجة التحليل</h2>
+  <div class="result" id="result"></div>
+  <p class="hint">⚠️ التحليل لأغراض معلوماتية وترفيهية فقط، ومفيش توقع مضمون 100%</p>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+$('apiKey').value = localStorage.getItem('gk') || '';
+
+$('imgInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  $('ocrStatus').textContent = '⏳ جاري قراءة الصورة...';
+  const img = await createImageBitmap(file);
+  const c = document.createElement('canvas');
+  const s = Math.min(1, 1400 / img.width);
+  c.width = img.width * s; c.height = img.height * s;
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  $('preview').src = c.toDataURL('image/jpeg', .85);
+  $('preview').classList.remove('hidden');
+  try {
+    const res = await Tesseract.recognize(c.toDataURL('image/jpeg', .85), 'ara+eng', { logger: m => { if (m.status === 'recognizing text') $('ocrStatus').textContent = '⏳ جاري التعرف على النصوص... ' + Math.round(m.progress * 100) + '%'; } });
+    const lines = res.data.text.split('\n').map(l => l.trim()).filter(l => /[؀-ۿa-zA-Z]{3,}/.test(l) && l.length >= 4 && !/\d{2}:\d{2}/.test(l));
+    const cand = [...new Set(lines)].slice(0, 2);
+    if (cand[0]) $('team1').value = cand[0];
+    if (cand[1]) $('team2').value = cand[1];
+    $('ocrStatus').textContent = cand.length ? '✅ تم استخراج الأسماء — راجعها وعدّل لو لزم' : '⚠️ مفيش نص واضح، اكتب الأسماء يدويًا';
+  } catch (err) { $('ocrStatus').textContent = '⚠️ حصل خطأ في القراءة، اكتب الأسماء يدويًا'; }
+});
+
+function md(t) {
+  return t.replace(/^## (.*)$/gm, '<h3>$1</h3>')
+          .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+          .replace(/^- (.*)$/gm, '<li>$1</li>')
+          .replace(/(<li>.*<\/li>)(\n<li>)/gs, '$1$2')
+          .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')
+          .replace(/\n/g, '<br>');
+}
+
+async function callGemini(model, key, payload) {
+  const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + key, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+async function analyze() {
+  const t1 = $('team1').value.trim(), t2 = $('team2').value.trim(), key = $('apiKey').value.trim();
+  if (!t1 || !t2) return alert('اكتب أسماء الفريقين الأول');
+  if (!key) return alert('حط مفتاح Gemini الأول');
+  localStorage.setItem('gk', key);
+  $('analyzeBtn').disabled = true; $('loadBox').classList.remove('hidden'); $('resultCard').classList.add('hidden');
+  $('loadTxt').textContent = '🔎 جاري البحث عن آخر مباريات الفريقين...';
+  const prompt = 'أنت محلل كرة قدم محترف. ابحث على الإنترنت عن آخر 5 مباريات رسمية لكل فريق، وآخر مواجهات مباشرة بين "' + t1 + '" و"' + t2 + '" (آخر 3 سنوات)، والغيابات أو الإصابات المؤثرة لو متاحة. الماتش لسه هيتلعب.\n\nاكتب التحليل باللغة العربية بالشكل ده بالظبط:\n## 🏟️ الفريق الأول: ' + t1 + '\n- آخر 5 مباريات (نتيجة كل مباراة)\n- تقييم الفورمة الحالية من 10 وهل الفريق في أقوى حالاته الفترة دي ولا لأ ولماذا\n## 🏟️ الفريق الثاني: ' + t2 + '\n- آخر 5 مباريات (نتيجة كل مباراة)\n- تقييم الفورمة الحالية من 10 وهل الفريق في أقوى حالاته الفترة دي ولا لأ ولماذا\n## ⚔️ المواجهات المباشرة\n- آخر 3 مواجهات بينهم بالنتائج\n## 🎯 التوقع\n- احتمال فوز ' + t1 + ': نسبة مئوية\n- احتمال التعادل: نسبة مئوية\n- احتمال فوز ' + t2 + ': نسبة مئوية\n- النتيجة المتوقعة الأكثر ترجيحًا\n## ⚽ الأهداف\n- هل المتوقع أهداف كتيرة (Over 2.5) ولا قليلة (Under 2.5) ونسبة الثقة\n## 📝 الخلاصة\n- 3 أسطر تلخص التوقع النهائي';
+  const base = { contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: .4 } };
+  let data = null;
+  try {
+    for (const m of ['gemini-2.5-flash', 'gemini-2.0-flash']) {
+      try { data = await callGemini(m, key, { ...base, tools: [{ google_search: {} }] }); break; }
+      catch (e) {
+        try { data = await callGemini(m, key, base); break; }
+        catch (e2) { if (m === 'gemini-2.0-flash') throw e2; }
+      }
+    }
+    const text = data.candidates[0].content.parts.map(p => p.text || '').join('');
+    $('result').innerHTML = md(text);
+    $('resultCard').classList.remove('hidden');
+    $('resultCard').scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+    alert('حصل خطأ: تأكد من المفتاح أو النت — ' + (err.message || '').slice(0, 200));
+  }
+  $('analyzeBtn').disabled = false; $('loadBox').classList.add('hidden');
+}
+</script>
+</body>
+</html>
